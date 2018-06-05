@@ -1,0 +1,80 @@
+-*- org -*-
+
+* top-down approach
+** executive overview
+(ugh)
+A Linux machine may have several network interfaces, such as eth0, eth1,
+wlan0, enp0s3.
+These udev rules ensure the correct assignment of interface names.
+
+_(
+  "<p><b>Udev Rules</b> are rules for the kernel device manager that allow\n" \
+    "associating the MAC address or BusID of the network device with its name (for\n" \
+    "example, eth1, wlan0 ) and assures a persistent device name upon reboot.\n"
+)
+
+For a NIC a widget exists where you can change its name and choose whether it
+will be pinned to its MAC or its bus address.
+
+* AY interface
+
+The rnc schema says all elements are optional
+but the SLE12(also 15) docs says name+rule+value are all required
+
+https://www.suse.com/documentation/sles-12/singlehtml/book_autoyast/book_autoyast.html#CreateProfile.Network.names
+
+Semantics: the device *name* is identified
+by the field with the key *rule* (sic!) having the value *value*
+(that does not allow some complex identifications)
+
+<networking>
+  <net-udev config:type="list">
+    <rule>
+      <name>eth0</name>
+      <rule>ATTR{address}</rule>
+      <value>00:30:6E:08:FF:80</value>
+    </rule>
+  </net-udev>
+</networking>
+
+* API
+
+** where is "udev" mentioned?
+$ grep -r -H -i udev src | cut -d: -f1 | uniq -c | sort -n
+      1 src/lib/network/install_inf_convertor.rb
+      2 src/include/network/lan/complex.rb
+      2 src/scrconf/cfg_udev_persistent.scr
+      3 src/autoyast-rnc/networking.rnc
+      3 src/modules/Lan.rb
+      4 src/servers_non_y2/ag_udev_persistent
+      5 src/clients/lan_auto.rb
+     15 src/include/network/lan/hardware.rb
+     18 src/lib/network/clients/save_network.rb
+     19 src/lib/network/edit_nic_name.rb
+     26 src/include/network/lan/udev.rb
+     28 src/lib/network/network_autoyast.rb
+    127 src/modules/LanItems.rb
+
+** s390 rules (AY: networking/s390-devices)
+are similar but not really
+- set up a virtual device
+- do not include a name(!?)
+** driver rules (selecting the driver seems broken?)
+the other part of ag_udev_persistent
+not part of AY?
+
+*** LanItems
+
+**** LanItem#update_item_udev_rule!(:mac or :bus_id)
+  = the nic should be identified by mac or bus id, update its rule so.
+**** export_net_udev
+should produce the net-udev part for Export
+*** save_network
+the rule file needs to be copied from inst-sys to target:
+  need its fs path
+*** edit_nic_name EditNicName
+is a freshly rewritten class, yay 2013-09 mchf
+well, it is called like EditNicName.new.run
+and its #initialize uses the ugly LanItemsApi
+so does #run
+and #CheckUdevNicName (sic)
