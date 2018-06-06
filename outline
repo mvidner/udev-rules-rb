@@ -3,6 +3,9 @@
 * top-down approach
 ** executive overview
 (ugh)
+If a computer has two network cards, how does it determine which one is *eth0*
+and which one is *eth1*?
+
 A Linux machine may have several network interfaces, such as eth0, eth1,
 wlan0, enp0s3.
 These udev rules ensure the correct assignment of interface names.
@@ -38,7 +41,19 @@ by the field with the key *rule* (sic!) having the value *value*
 </networking>
 
 * API
+** Naming
+anything named "udev" should be code-clean
 
+LanItems - keep it for now but remember that "item" is too generic
+  yet it combines info about a "nic" and its (stored) config
+
+"Udev" is an implementation detail, the upper layer should say
+"NameRule"
+
+"Udev name" -> "device name", or "persistent d name"
+
+** copying and identity
+#Items are deeply copied values? NO. GetLanItem and getCurrentItem
 ** where is "udev" mentioned?
 $ grep -r -H -i udev src | cut -d: -f1 | uniq -c | sort -n
       1 src/lib/network/install_inf_convertor.rb
@@ -62,19 +77,92 @@ are similar but not really
 ** driver rules (selecting the driver seems broken?)
 the other part of ag_udev_persistent
 not part of AY?
+** target API
+*** NameRule
+**** @udev [UdevRule]
+**** #matcher= and #matcher(:bus_id or :mac)
+**** #name
+udev["NAME"]
+*** NameRules
+**** #pathname
+"/etc/udev/rules.d/70-persistent-net.rules"
 
-*** LanItems
-
-**** LanItem#update_item_udev_rule!(:mac or :bus_id)
-  = the nic should be identified by mac or bus id, update its rule so.
-**** export_net_udev
-should produce the net-udev part for Export
+** Usage
+*** InstallInfConvertor
+**** AllowUdevModify
+checks if cmdline contains "biosdevname=..."
+*** NetworkLanComplexInclude src/include/network/lan/complex.rb
+**** calls LanItems.update_item_udev_rule!(:bus_id)
+*** Lan#Export
+calls LanItems#Export
+*** lan_auto
+**** ToAY converts the net-udev piece from a hash to an array
+*** NetworkLanHardwareInclude
+it's the Hardware tab
+      device_name = LanItems.current_udev_name
+let's keep that
 *** save_network
+#copy_udev_rules
+
+s390 51* leave that
+
 the rule file needs to be copied from inst-sys to target:
   need its fs path
+  NameRules#pathname (and use std ruby dirname+basename)
+BTW the https://bugzilla.suse.com/show_bug.cgi?id=293366#c7 comment means
+a mkdir -p is fine
 *** edit_nic_name EditNicName
 is a freshly rewritten class, yay 2013-09 mchf
 well, it is called like EditNicName.new.run
 and its #initialize uses the ugly LanItemsApi
 so does #run
 and #CheckUdevNicName (sic)
+**** to be removed:
+MAC_UDEV_ATTR   = "ATTR{address}".freeze
+BUSID_UDEV_ATTR = "KERNELS".freeze
+**** initialize
+@old_key = current_item_name_rule.matcher
+**** run
+        LanItems.update_item_udev_rule!(udev_type)
+(watch out, uses the ui symbol directly)
+**** CheckUdevNicName
+uses LanItems#GetCurrentName
+  which is GetDeviceName(@current) ... and it never uses the "udev name" which
+  confuses my naming plan :(
+renamed! to check_new_device_name
+*** network_autoyast
+renaming logic
+
+*** LanItems
+**** #current_udev_name
+deals with renaming, uses
+         LanItems.GetItemUdev("NAME")
+-> current_item_name_rule.name
+def current_item_name_rule; getCurrentItem["udev"]["net"] + autovivify(?); end
+**** LanItems#update_item_udev_rule!(:mac or :bus_id)
+  implementation eventually does
+          Items()[@current]["udev"]["net"] = new_rule
+
+  LanItems.current is the *index*, duh
+
+so:
+  name_rule = LanItems.getCurrentItem["udev"]["net"] is an acceptable access path
+  name_rule.matcher = :bus_id   # maybe make/use an Enum class? but a symbol is ok
+  # saving semantics?
+
+**** LanItems#export
+should produce the net-udev part for Export
+
+export_s390_devices
+export_net_udev
+ (warning, on s390 it constructs KERNELS rules detected from /sys
+  probably keep the weird impl)
+
+NameRule#to_ay ->
+ { "rule" => "KERNELS", "name" => "eth1", "value" => "0000:00:1f.6" }
+NameRules#to_ay ->
+ an array of (NameRule#to_ay)
+ (NOTE that LanItems#export needs a [name, rule]...to_h conversion until the
+ ToAY conversion is dropped)
+**** createUdevFromIfaceName
+make implicitly defined rules via old style names (ifcfg-eth-id-nn-nn-nn?)
