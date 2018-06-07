@@ -27,11 +27,11 @@ It is simple enough and well defined.
 
 ** Plan
 
-[x] collect all mentions of "udev" in yast-network
-[ ] read them all and design a decent API
-[ ] cover the code with tests
-[ ] use the new API, possibly using old code underneath
-[ ] replace old implementation with a better one
+- [x] collect all mentions of "udev" in yast-network
+- [ ] read them all and design a decent API
+- [ ] cover the code with tests
+- [ ] use the new API, possibly using old code underneath
+- [ ] replace old implementation with a better one
 
 ** AY interface
 
@@ -57,6 +57,7 @@ by the field with the key *rule* (sic!) having the value *value*
 #+END_SRC
 
 ** where is "udev" mentioned?
+#+BEGIN_SRC sh
 $ grep -r -H -i udev src | cut -d: -f1 | uniq -c | sort -n
       1 src/lib/network/install_inf_convertor.rb
       2 src/include/network/lan/complex.rb
@@ -71,6 +72,7 @@ $ grep -r -H -i udev src | cut -d: -f1 | uniq -c | sort -n
      26 src/include/network/lan/udev.rb
      28 src/lib/network/network_autoyast.rb
     127 src/modules/LanItems.rb
+#+END_SRC
 
 ** Areas NOT in scope
 
