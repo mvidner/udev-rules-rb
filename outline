@@ -40,21 +40,7 @@ by the field with the key *rule* (sic!) having the value *value*
   </net-udev>
 </networking>
 
-* API
-** Naming
-anything named "udev" should be code-clean
-
-LanItems - keep it for now but remember that "item" is too generic
-  yet it combines info about a "nic" and its (stored) config
-
-"Udev" is an implementation detail, the upper layer should say
-"NameRule"
-
-"Udev name" -> "device name", or "persistent d name"
-
-** copying and identity
-#Items are deeply copied values? NO. GetLanItem and getCurrentItem
-** where is "udev" mentioned?
+* where is "udev" mentioned?
 $ grep -r -H -i udev src | cut -d: -f1 | uniq -c | sort -n
       1 src/lib/network/install_inf_convertor.rb
       2 src/include/network/lan/complex.rb
@@ -69,6 +55,24 @@ $ grep -r -H -i udev src | cut -d: -f1 | uniq -c | sort -n
      26 src/include/network/lan/udev.rb
      28 src/lib/network/network_autoyast.rb
     127 src/modules/LanItems.rb
+* API
+** Naming
+anything named "udev" should be code-clean
+
+LanItems - keep it for now but remember that "item" is too generic
+  yet it combines info about a "nic" and its (stored) config
+
+"Udev" is an implementation detail, the upper layer should say
+"NameRule"
+
+"Udev name" -> "device name", or "persistent d name"
+
+In LanItems, keep the general interface of item["udev"]["net"]
+so that existing code works, BUT
+  instead of ["net"] which is_a Array<String>
+  make       ["name_rule"] which is_a NameRule
+** copying and identity
+#Items are deeply copied values? NO. GetLanItem and getCurrentItem
 
 ** s390 rules (AY: networking/s390-devices)
 are similar but not really
@@ -77,10 +81,21 @@ are similar but not really
 ** driver rules (selecting the driver seems broken?)
 the other part of ag_udev_persistent
 not part of AY?
+** LanItems item API
+*** current -> integer
+the *index* of the current item
+*** GetLanItem(item_id) => item(item_id) # surprisingly no collisions with "item" lvar
+*** getCurrentItem      => current_item
+*** item_name_rule(item_id) = item(item_id)["udev"]["name_rule"]
+also considering that #item would be an adaptor object
+that would translate #name_rule to ["udev"]["name_rule"]
+Does it need to exist? Nil? NullRule?
+*** current_item_name_rule  =  current_item["udev"]["name_rule"]
 ** target API
 *** NameRule
 **** @udev [UdevRule]
 **** #matcher= and #matcher(:bus_id or :mac)
+**** #value (case sensitive??)
 **** #name
 udev["NAME"]
 *** NameRules
@@ -132,13 +147,28 @@ uses LanItems#GetCurrentName
 renamed! to check_new_device_name
 *** network_autoyast
 renaming logic
+**** create_udevs
+"# Creates udev rules according definition from profile"
+rename to create_name_rules_from_profile
+uses LanItems.createUdevFromIfaceName - well drop that, SLE10 compat
+calls assign_udevs_to_devs
+**** assign_udevs_to_devs (udev_rules: Array<AY_rule>)
+ make nr = NameRule.from_ay(hash(name rule value))
+ it's a standalone one not part of NameRules
+ does an item match a NameRule
 
+ rename_lan_item
+**** rename_lan_item
+keep the signature because the renaming mess is fragile and we'll leave the
+  logic unchanged for now
+
+  LanItems.InitItemUdevRule(item_idx) # the only caller
 *** LanItems
 **** #current_udev_name
 deals with renaming, uses
          LanItems.GetItemUdev("NAME")
 -> current_item_name_rule.name
-def current_item_name_rule; getCurrentItem["udev"]["net"] + autovivify(?); end
+def current_item_name_rule; current_item["udev"]["name_rule"] + autovivify(?); end
 **** LanItems#update_item_udev_rule!(:mac or :bus_id)
   implementation eventually does
           Items()[@current]["udev"]["net"] = new_rule
@@ -146,8 +176,7 @@ def current_item_name_rule; getCurrentItem["udev"]["net"] + autovivify(?); end
   LanItems.current is the *index*, duh
 
 so:
-  name_rule = LanItems.getCurrentItem["udev"]["net"] is an acceptable access path
-  name_rule.matcher = :bus_id   # maybe make/use an Enum class? but a symbol is ok
+  current_item_name_rule.matcher = :bus_id   # maybe make/use an Enum class? but a symbol is ok
   # saving semantics?
 
 **** LanItems#export
@@ -165,4 +194,13 @@ NameRules#to_ay ->
  (NOTE that LanItems#export needs a [name, rule]...to_h conversion until the
  ToAY conversion is dropped)
 **** createUdevFromIfaceName
-make implicitly defined rules via old style names (ifcfg-eth-id-nn-nn-nn?)
+rename to name_rules_from_sle10_names
+or just drop it quietly
+make implicitly defined rules via old style names
+  ifcfg-eth-id-nn-nn-nn...
+  ifcfg-eth-bus-nnnn-nn...
+**** InitItemUdevRule
+**** GetItemUdevRule(item_id) -> Array<String> rule
+      Ops.get_list(GetLanItem(itemId), ["udev", "net"], [])
+ =>
+ item_name_rule(item_id) -> NameRule
